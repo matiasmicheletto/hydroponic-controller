@@ -90,10 +90,10 @@ const unsigned long pumpOnDuration = ON_TIMEOUT * MINUTE; // Pump timer to turn 
 const unsigned long pumpOffDuration = OFF_TIMEOUT * MINUTE; // Pump timer to turn on
 
 // === Timers ===
-static unsigned long lastSensorRead = 0; // Timer for sensor acquiring and readings update
-static unsigned long lastSensorSwitch = 0; // Timer for disabling sensors and display
-static unsigned long lastCapRead = 0; // Timer for touch sensor read
-static unsigned long lastPumpSwitch = 0; // Timer for pump control
+static unsigned long lastSensorRead; // Timer for sensor acquiring and readings update
+static unsigned long lastSensorSwitch; // Timer for disabling sensors and display
+static unsigned long lastCapRead; // Timer for touch sensor read
+static unsigned long lastPumpSwitch; // Timer for pump control
 
 
 // === HELPER FUNCTIONS ===
@@ -199,6 +199,12 @@ void readSensors() {
   sensor.level = readVolume();
 }
 
+void resetSystem() {
+  // Reset system by watchdog timer
+  wdt_enable(WDTO_15MS);
+  while(1) {}
+}
+
 // === PROGRAM INITIALIZATION ===
 void setup() {
 
@@ -246,6 +252,13 @@ void setup() {
   digitalWrite(PUMP_PIN, HIGH);
   digitalWrite(PUMP_LED_PIN, HIGH);
 
+  // Timers initialization
+  unsigned long now = millis();
+  lastSensorRead = now;
+  lastSensorSwitch = now;
+  lastCapRead = now;
+  lastPumpSwitch = now;
+
 #ifdef DEBUG
   Serial.print("listo.");
 #endif
@@ -271,11 +284,19 @@ void loop() {
 
   // Pump control - Toggle if timeouts
   if(setPumpOn) {
+    /* If freezing issues cannot be solved, use this ugly reset
+    if(lastPumpSwitch != 0) {
+      resetSystem(); // Reset system
+    }
+    */
     pump.state = PUMP_ON;
     digitalWrite(PUMP_PIN, HIGH);
     digitalWrite(PUMP_LED_PIN, HIGH);
 #ifdef DEBUG
-    Serial.println("Bomba encendida.");
+    Serial.print("Timestamp: ")
+    Serial.print(now);
+    Serial.println(" - Bomba encendida.");
+    
 #endif
     lastPumpSwitch = now;
   } else if(setPumpOff) {
@@ -283,7 +304,9 @@ void loop() {
     digitalWrite(PUMP_PIN, LOW);
     digitalWrite(PUMP_LED_PIN, LOW);
 #ifdef DEBUG
-    Serial.println("Bomba apagada.");
+    Serial.print("Timestamp: ")
+    Serial.print(now);
+    Serial.println(" - Bomba apagada.");
 #endif
     lastPumpSwitch = now;
   }
@@ -307,9 +330,12 @@ void loop() {
     lastCapRead = now; // Reset capacitive sensor timer
     if (sensor.touchValue > CAP_THRES) { // If touch detected
 #ifdef DEBUG
-      Serial.println("Reinicio de sensado.");
+      Serial.print("Timestamp: ")
+      Serial.print(now);
+      Serial.println(" - Reinicio de sensado.");
 #endif
-      lcd.backlight(); // Wake up LCD
+      lcd.init(); // Wake up LCD
+      lcd.backlight(); 
       lastSensorSwitch = now;
       sensorsStatus = SENSORS_ENABLED; // Enable sensor readings
     }
@@ -318,7 +344,9 @@ void loop() {
   // If inactive, turn off LCD and sensor reading
   if (disableSensors) {
 #ifdef DEBUG
-    Serial.println("Sensado desactivado.");
+    Serial.print("Timestamp: ")
+    Serial.print(now);
+    Serial.println(" - Sensado desactivado.");
 #endif
     lcd.clear();
     lcd.noBacklight();
