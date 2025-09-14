@@ -1,3 +1,4 @@
+#include <avr/wdt.h>
 #include <Wire.h>
 #include <DHT.h>
 #include <LiquidCrystal_I2C.h>
@@ -9,7 +10,8 @@
 3 -> Capacitive send
 4 -> Capacitive receive (touch plate)
 6 -> Pump led
-7 -> Pump
+7 -> Pump on/off
+8 -> TDS on/off
 9 -> HC-SR04 Trigger
 10 -> HC-SR04 Echo
 A1 -> TDS
@@ -29,7 +31,8 @@ const int DHT_PIN = 2;
 // LCD Display 20x4
 #define LCD_ADDR 0x27 // May be 0x3F for some models
 // Conductivity sensor
-#define TDS_PIN A1
+#define TDS_INPUT_PIN A1
+const int TDS_ON_PIN = 8;
 #define TDS_A_REF 5.0
 #define ADC_RANGE 1024
 // Water level sensor
@@ -221,9 +224,14 @@ void setup() {
   lcd.init();
   lcd.backlight();
   lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Iniciando...");
 
   // Conductivity sensor initialization
-  gtds.setPin(TDS_PIN);
+  pinMode(TDS_ON_PIN, OUTPUT);
+  digitalWrite(TDS_ON_PIN, HIGH); // Power on TDS sensor
+  delay(500); // Wait for sensor to stabilize  
+  gtds.setPin(TDS_INPUT_PIN);
   gtds.setAref(TDS_A_REF);
   gtds.setAdcRange(ADC_RANGE);
 
@@ -245,6 +253,8 @@ void setup() {
 #ifdef DEBUG
   Serial.print("Inicializado. Encendiendo bomba... ");
 #endif
+  lcd.setCursor(0, 2);
+  lcd.print("Encendiendo bomba...");
 
   // Wait 3 seconds after initialization and then turn on pump
   delay(3000);
@@ -260,8 +270,12 @@ void setup() {
   lastPumpSwitch = now;
 
 #ifdef DEBUG
-  Serial.print("listo.");
+  Serial.println("listo.");
 #endif
+  lcd.setCursor(0, 2);
+  lcd.print("Sistema inicializado");
+  delay(1000);
+  lcd.clear(); 
 }
 
 
@@ -284,19 +298,13 @@ void loop() {
 
   // Pump control - Toggle if timeouts
   if(setPumpOn) {
-    /* If freezing issues cannot be solved, use this ugly reset
-    if(lastPumpSwitch != 0) {
-      resetSystem(); // Reset system
-    }
-    */
     pump.state = PUMP_ON;
     digitalWrite(PUMP_PIN, HIGH);
     digitalWrite(PUMP_LED_PIN, HIGH);
 #ifdef DEBUG
-    Serial.print("Timestamp: ")
+    Serial.print("Timestamp: ");
     Serial.print(now);
     Serial.println(" - Bomba encendida.");
-    
 #endif
     lastPumpSwitch = now;
   } else if(setPumpOff) {
@@ -304,7 +312,7 @@ void loop() {
     digitalWrite(PUMP_PIN, LOW);
     digitalWrite(PUMP_LED_PIN, LOW);
 #ifdef DEBUG
-    Serial.print("Timestamp: ")
+    Serial.print("Timestamp: ");
     Serial.print(now);
     Serial.println(" - Bomba apagada.");
 #endif
@@ -330,12 +338,13 @@ void loop() {
     lastCapRead = now; // Reset capacitive sensor timer
     if (sensor.touchValue > CAP_THRES) { // If touch detected
 #ifdef DEBUG
-      Serial.print("Timestamp: ")
+      Serial.print("Timestamp: ");
       Serial.print(now);
       Serial.println(" - Reinicio de sensado.");
 #endif
+      digitalWrite(TDS_ON_PIN, HIGH); // Turn TDS sensor on
       lcd.init(); // Wake up LCD
-      lcd.backlight(); 
+      lcd.backlight();
       lastSensorSwitch = now;
       sensorsStatus = SENSORS_ENABLED; // Enable sensor readings
     }
@@ -344,12 +353,13 @@ void loop() {
   // If inactive, turn off LCD and sensor reading
   if (disableSensors) {
 #ifdef DEBUG
-    Serial.print("Timestamp: ")
+    Serial.print("Timestamp: ");
     Serial.print(now);
     Serial.println(" - Sensado desactivado.");
 #endif
     lcd.clear();
     lcd.noBacklight();
+    digitalWrite(TDS_ON_PIN, LOW); // Turn TDS sensor off
     lastSensorSwitch = now;
     sensorsStatus = SENSORS_DISABLED;
   }
